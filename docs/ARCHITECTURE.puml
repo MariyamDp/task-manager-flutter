@@ -1,0 +1,54 @@
+@startuml
+title DB Task Manager — Architecture & Dependency Flow
+
+package "Presentation" {
+  [TaskPage]
+  [TaskBloc]
+}
+
+package "Domain" {
+  [GetTasksUseCase]
+  [SaveTaskUseCase]
+  [ITaskRepository]
+  [Task]
+}
+
+package "Data" {
+  [TaskRepositoryImpl]
+  [ITaskDataSource]
+  [LocalStorageDataSource]
+  [FirebaseDataSource]
+  [SQLiteDataSource]
+}
+
+package "Core/DI" {
+  [injection.dart]
+  [injection.config.dart]
+}
+
+' Dependency flow
+TaskPage --> TaskBloc
+TaskBloc --> GetTasksUseCase
+GetTasksUseCase --> ITaskRepository
+ITaskRepository <.. TaskRepositoryImpl
+TaskRepositoryImpl --> ITaskDataSource
+ITaskDataSource <.. LocalStorageDataSource
+ITaskDataSource <.. FirebaseDataSource
+ITaskDataSource <.. SQLiteDataSource
+
+' DI / Service registration
+injection.dart --> TaskRepositoryImpl
+injection.dart --> LocalStorageDataSource
+injection.dart --> FirebaseDataSource
+
+note left of TaskRepositoryImpl
+  registered as @lazySingleton
+  implements ITaskRepository
+end note
+
+note right of LocalStorageDataSource
+  registered for @Environment("dev") or @Environment("prod")
+  implements ITaskDataSource
+end note
+
+@enduml
