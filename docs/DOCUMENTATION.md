@@ -93,7 +93,7 @@ Look in `lib/core/interfaces` for contracts used across the app (repositories, d
 
 ## Adding a New Feature
 
-1. Create a new feature folder under `lib/core/features/your_feature` with subfolders for `models`, `screens`, `widgets`, and `bloc`/`providers` (or state solution of choice).
+1. Create a new feature folder under `lib/core/features/feature` with subfolders for `models`, `screens`, `widgets`, and `bloc`/`providers` (or state solution of choice).
 2. Add interfaces to `lib/core/interfaces` when shared behavior is required.
 3. Register concrete implementations in `lib/core/di`.
 
@@ -114,34 +114,103 @@ flutter test
 
 Follow Flutter's official docs for code signing and store submission steps.
 
-## Contributing
+## Architecture & SOLID Principles
 
-Contributions are welcome. Suggested workflow:
+### Dependency Flow Diagram
 
-1. Fork the repo.
-2. Create a feature branch: `git checkout -b feat/your-feature`
-3. Add tests for new behavior.
-4. Open a pull request with a clear description of changes.
+```
+Presentation Layer (UI)
+    ↓ depends on
+BLoC / State Management
+    ↓ depends on
+Use Cases (Domain Logic)
+    ↓ depends on
+Repositories (Abstractions)
+    ↓ depends on
+Data Sources (Implementations)
+    ↓ depends on
+External Services (DB, SharedPreferences, Dio, etc.)
+```
 
-Please follow the project's coding style and write tests for non-trivial changes.
+**Clean Architecture principle**: Each layer depends only on abstractions from the layer below, never on concrete implementations from higher layers.
+
+### Single Responsibility Principle (SRP)
+
+**Definition**: A class should have one reason to change.
+
+**Implementation in this codebase**:
+
+- **`TaskRepository`** manages storage operations and applies domain logic (pinned-first sorting). Delegates CRUD to `ITaskDataSource`, doesn't handle persistence itself.
+- **`TaskValidator`** validates task input (title length, deadline). Does not save, delete, or transform tasks.
+- **`NotificationService`** sends notifications when tasks are due. Decoupled from repository; called independently by BLoC if needed.
+- **`TaskReportGenerator`** generates task summary reports. Only reads task state, does not modify it.
+
+**Why it matters**: If validation rules change, only `TaskValidator` needs updates; if persistence backend changes, only datasource implementations change.
+
+### Open/Closed Principle (OCP)
+
+**Definition**: Classes should be open for extension but closed for modification.
+
+**Implementation**:
+
+- **`ITaskDataSource` interface** defines contract: `getTasks()`, `saveTask()`, `deleteTask()`, `markDone()`, `togglePin()`
+- **Multiple implementations** (all implement `ITaskDataSource`):
+  - `LocalStorageDataSource`: uses SharedPreferences
+  - `SQLiteDataSource`: uses sqflite
+  - `FirebaseDataSource`: uses Dio (stub)
+  - `InMemoryDataSource`: for testing/Pure DI demo
+
+**Why it matters**: Adding a new storage backend requires only implementing `ITaskDataSource` and registering it in DI. `TaskRepository` and all higher layers remain unchanged.
+
+### Liskov Substitution Principle (LSP)
+
+**Definition**: Objects of a superclass should be substitutable by subclass objects without breaking the application.
+
+**Implementation**:
+
+- **`Task` hierarchy**:
+  - Base: `Task` (id, title, description, createdAt, deadline, isDone, isPinned, color)
+  - Subtypes: `RecurringTask extends Task`, `PriorityTask extends Task`
+  - All three are usable in `List<Task>` without behavior changes
+
+**Verification in tests**: RecurringTask, PriorityTask, and Task work seamlessly in the same collection and repository operations.
+
+### Interface Segregation Principle (ISP)
+
+**Definition**: Clients should depend on minimal, focused interfaces, not "fat" ones.
+
+**Implementation**:
+
+- **Focused interfaces**: `Readable<T>` (read only), `Writable<T>` (write only), `Deletable<T>` (delete only)
+- **Composition**: `ITaskRepository` composes these and adds domain-specific methods (`togglePin`, `markDone`)
+
+**Why it matters**: A read-only task view depends only on `Readable<Task>`, not the full repository. Prevents accidental writes and reduces coupling.
+
+### Dependency Inversion Principle (DIP)
+
+**Definition**: High-level modules should depend on abstractions, not low-level modules.
+
+**Implementation**:
+
+- `TaskBloc` depends on use cases, not concrete repositories
+- Use cases depend on `ITaskRepository` (interface), not implementations
+- Repository depends on `ITaskDataSource` (interface), not specific datasources
+- DI configuration registers implementations to interfaces: `@LazySingleton(as: ITaskRepository)`
+- Environment support: `@Environment('dev')`, `@Environment('prod')`, `@Environment('cloud')` swap datasources
+
+**Why it matters**: Testing becomes trivial — mock `ITaskDataSource` without touching repository code. Deployment swaps datasources with environment variables, not code rewrites.
+
+---
+
+## Service Locator vs Pure Dependency Injection
+
+This repo demonstrates both patterns:
+
+- **Service Locator (get_it + `injectable`)**: Default for main app pages. Centralized, concise, environment-aware codegen. Hides dependencies but simplifies setup.
+- **Pure DI (constructor injection)**: Demo page `TaskListPureDIPage` shows manual wiring. Dependencies explicit, easier to test, but more boilerplate.
 
 ## Troubleshooting & FAQ
 
 - If `flutter pub get` fails, run `flutter pub cache repair` and re-run `flutter pub get`.
 - If platform builds fail, run `flutter clean` and re-run the build.
 
-## Where to Edit the README
-
-This repository's short landing page is [README.md](README.md). Use the `docs/DOCUMENTATION.md` as the canonical, detailed developer documentation and keep `README.md` focused on a short overview and quickstart.
-
-## License
-
-If a license is not present, add one (e.g., MIT) at the repository root as `LICENSE`.
-
----
-
-If you'd like, I can:
-
-- Sync key sections into `README.md`.
-- Generate a smaller `CONTRIBUTING.md` and `CHANGELOG.md`.
-- Add example screenshots and usage GIFs (you can point me to assets).
